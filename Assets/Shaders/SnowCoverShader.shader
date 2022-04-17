@@ -7,7 +7,12 @@ Shader "SnowCoverShader"
     }
     SubShader
     {
-        Tags { "RenderType"="Opaque" }
+        Tags {
+            "Queue"="Transparent"
+            "RenderType"="Transparent"
+        }
+        
+        Blend SrcAlpha OneMinusSrcAlpha
 
         Pass
         {
@@ -77,7 +82,7 @@ Shader "SnowCoverShader"
 
                 float3 diffuseLight = ambientLight + directDiffuseLight;
                 float3 finalColor = diffuseLight * _Color.rgb + directSpecular;
-                output.color = float4(finalColor, 0);
+                output.color = float4(finalColor, 0.5);
                 return output;
             }
 
