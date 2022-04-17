@@ -2,6 +2,8 @@ Shader "SnowCoverShader"
 {
     Properties
     {
+        _Color ( "Color", Color ) = (1,1,1,1)
+        _Gloss ( "Gloss", Float ) = 1
     }
     SubShader
     {
@@ -19,14 +21,16 @@ Shader "SnowCoverShader"
 
             struct VS_IN
             {
-                float4 pos          : POSITION;
+                float4 vertex       : POSITION;
                 float3 normal       : NORMAL;
             };
 
             struct VS_OUT
             {
-                float4 worldPos     : SV_POSITION;
-                float3 worldNormal  : TEXCOORD1;
+                float4 clipPos      : SV_POSITION;
+                float4 worldPos     : TEXCOORD0;
+                float3 localNormal  : TEXCOORD1;
+                float3 worldNormal  : TEXCOORD2;
             };
 
             #define PS_IN VS_OUT
@@ -35,28 +39,45 @@ Shader "SnowCoverShader"
                 float4 color        : SV_Target;
             };
 
+            float4 _Color;
+            float _Gloss;
+
             VS_OUT VS_Main(VS_IN input)
             {
                 VS_OUT output;
+                output.clipPos = UnityObjectToClipPos(input.vertex);
+                output.worldPos = mul(unity_ObjectToWorld, input.vertex);
+                output.localNormal = input.normal;
                 output.worldNormal = UnityObjectToWorldNormal(input.normal).xyz;
-                output.worldPos = UnityObjectToClipPos(input.pos);
                 return output;
             }
 
             PS_OUT PS_Main(PS_IN input)
             {
                 PS_OUT output;
+                float3 normal = normalize(input.worldNormal);
 
-                // Diffuse lighting
-                float3 lightDirection = _WorldSpaceLightPos0.xyz;
+                // Direct diffuse lighting
+                float3 lightDir = _WorldSpaceLightPos0.xyz;
                 float3 lightColor = _LightColor0.rgb;
-                float3 lightIntensity = max(0, dot(lightDirection, input.worldNormal));
-                float3 diffuseLight = lightColor * lightIntensity;
+                float lightFalloff = max(0, dot(lightDir, normal));
+                float3 directDiffuseLight = lightColor * lightFalloff;
 
                 // Ambient lighting
                 float3 ambientLight = unity_AmbientSky.xyz;
 
-                output.color = float4(diffuseLight + ambientLight, 0);
+                // Specular light
+                float3 camPos = _WorldSpaceCameraPos;
+                float3 viewDir = normalize(camPos - input.worldPos);
+                float3 viewReflect = reflect(-viewDir, normal);
+                float specularFalloff = max(0, dot(viewReflect, lightDir));
+                // Apply gloss
+                specularFalloff = pow(specularFalloff, _Gloss);
+                float directSpecular = lightColor * specularFalloff;
+
+                float3 diffuseLight = ambientLight + directDiffuseLight;
+                float3 finalColor = diffuseLight * _Color.rgb + directSpecular;
+                output.color = float4(finalColor, 0);
                 return output;
             }
 
