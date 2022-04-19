@@ -25,12 +25,31 @@ Shader "SnowCoverShader"
         {
             HLSLPROGRAM
 
+            // start unity-specific stuff
             #pragma vertex VS_Main
             #pragma geometry GS_Main
             #pragma fragment PS_Main
 
             #include "UnityCG.cginc"
             #include "UnityLightingCommon.cginc"
+
+            #define MATRIX_M unity_ObjectToWorld // model matrix
+            #define MATRIX_VP UNITY_MATRIX_VP // view-projection matrix
+            #define AMBIENT_COLOR UNITY_LIGHTMODEL_AMBIENT
+            #define DIRECT_LIGHT _WorldSpaceLightPos0 // directional light direction in world space
+            #define DIRECT_LIGHT_COLOR _LightColor0 // directional light color
+            #define ObjectToWorld MATRIX_M // conversion matrix from local-space to world-space
+            // end unity-specific stuff
+
+            inline float3 ObjectToWorldNormal(in float3 normal)
+            {
+	            return normalize(mul(normal, (float3x3)ObjectToWorld));
+            }
+
+            inline float3 ObjectToWorldDir(in float3 dir)
+            {
+                return normalize(mul((float3x3)ObjectToWorld, dir));
+            }
 
             struct VS_IN
             {
@@ -54,14 +73,14 @@ Shader "SnowCoverShader"
                 float4 uv               : TEXCOORD0; // texture coordinates
                 float3 worldPos         : TEXCOORD1; // world-space vertex position
                 float3 worldNormal      : TEXCOORD2; // world-space vertex normal
-                float3 lightDir         : TEXCOORD4;
-                float3 viewDir          : TEXCOORD5;
+                float3 lightDir         : TEXCOORD4; // light direction in tangent-space
+                float3 viewDir          : TEXCOORD5; // light direction in tangent-space
             };
 
             #define PS_IN GS_OUT
             struct PS_OUT
             {
-                float4 color        : SV_Target; // fragment color
+                float4 color            : SV_Target; // fragment color
             };
 
             sampler2D _AlbedoTex;
@@ -79,24 +98,24 @@ Shader "SnowCoverShader"
                 VS_OUT output;
                 output.uv = input.texcoord.xyxy;
                 output.uv = output.uv * 2.0; // arbitrary texture scaling
-                output.worldPos = mul(unity_ObjectToWorld, input.vertex).xyz + _SnowDirection * _SnowThickness;
-                output.worldNormal = UnityObjectToWorldNormal(input.normal);
-                output.worldTangent = float4(UnityObjectToWorldDir(input.tangent.xyz), input.tangent.w);
+                output.worldPos = mul(MATRIX_M, input.vertex).xyz + _SnowDirection * _SnowThickness;
+                output.worldNormal = ObjectToWorldNormal(input.normal);
+                output.worldTangent = float4(ObjectToWorldDir(input.tangent.xyz), input.tangent.w);
                 return output;
             }
 
             GS_OUT SetupVertex(GS_IN input, float3 worldNormal)
             {
                 GS_OUT output;
-                output.clipPos = mul(UNITY_MATRIX_VP, float4(input.worldPos, 1));
+                output.clipPos = mul(MATRIX_VP, float4(input.worldPos, 1));
                 output.uv = input.uv;
                 output.worldPos = input.worldPos;
                 output.worldNormal = worldNormal;
                 // lighting calculation in tangent space
 				fixed3 worldBinormal = cross(worldNormal, input.worldTangent.xyz) * input.worldTangent.w;
                 float3x3 worldToTangent = float3x3(input.worldTangent.xyz, worldBinormal, worldNormal);
-                output.lightDir = mul(worldToTangent, _WorldSpaceLightPos0.xyz);
-                output.viewDir = mul(worldToTangent, _WorldSpaceLightPos0.xyz);
+                output.lightDir = mul(worldToTangent, DIRECT_LIGHT.xyz);
+                output.viewDir = mul(worldToTangent, DIRECT_LIGHT.xyz);
                 return output;
             }
 
@@ -151,7 +170,7 @@ Shader "SnowCoverShader"
 
             inline float3 ComputeAmbientLightColor()
             {
-                return UNITY_LIGHTMODEL_AMBIENT.rgb;
+                return AMBIENT_COLOR.rgb;
             }
 
             PS_OUT PS_Main(PS_IN input)
@@ -176,7 +195,7 @@ Shader "SnowCoverShader"
 				
 				fixed3 ambient = ComputeAmbientLightColor() * albedo;
 				
-				fixed3 diffuse = ComputeDiffuseLight(tangentLightDir, tangentNormal) * _LightColor0.rgb * albedo;
+				fixed3 diffuse = ComputeDiffuseLight(tangentLightDir, tangentNormal) * DIRECT_LIGHT_COLOR.rgb * albedo;
 
 				output.color = fixed4(ambient + diffuse, 1);
                 return output;
